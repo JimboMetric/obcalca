@@ -33,6 +33,19 @@ export default class ObCalcaPlugin extends Plugin {
                 }
             }
         });
+
+        this.registerDomEvent(document, 'keyup', async (evt: KeyboardEvent) => {
+            if (evt.key === '>') {
+                const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+                if (!view) return;
+                const editor = view.editor;
+                const cursor = editor.getCursor();
+                const line = editor.getLine(cursor.line);
+                if (cursor.ch >= 2 && line.substring(cursor.ch - 2, cursor.ch) === '=>') {
+                    await this.evaluateActiveFile();
+                }
+            }
+        });
     }
 
     private async loadVariablesFile() {

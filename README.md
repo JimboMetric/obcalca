@@ -8,4 +8,5 @@ y = x + 5 => 15
 z => 15
 ```
 Run **Evaluate Document** from the command palette to update all evaluations.
+Evaluations also run automatically when you type the `=>` token at the end of a line.
 Typing `@?` in the editor will display all current variables in a popup.
