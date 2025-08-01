@@ -1,4 +1,4 @@
-import { App, Plugin, PluginManifest, PluginSettingTab, Setting, Notice, MarkdownPostProcessorContext, MarkdownView, TFile } from 'obsidian';
+import { Plugin, Notice, MarkdownView, TFile } from 'obsidian';
 import { create, all } from 'mathjs';
 
 const math = create(all, {});
@@ -11,6 +11,8 @@ export default class ObCalcaPlugin extends Plugin {
     private globalVariables: VariableMap = {};
     private globalFunctions: VariableMap = {};
     private lastVariables: VariableMap = {};
+    private isEvaluating = false;
+    private evaluateTimer: number | null = null;
 
     async onload() {
         await this.loadVariablesFile();
@@ -18,7 +20,7 @@ export default class ObCalcaPlugin extends Plugin {
         this.addCommand({
             id: 'evaluate-document',
             name: 'Evaluate Document',
-            callback: () => this.evaluateActiveFile()
+            callback: () => this.evaluateActiveFile(true)
         });
 
         this.registerDomEvent(document, 'keyup', (evt: KeyboardEvent) => {
@@ -34,18 +36,7 @@ export default class ObCalcaPlugin extends Plugin {
             }
         });
 
-        this.registerDomEvent(document, 'keyup', async (evt: KeyboardEvent) => {
-            if (evt.key === '>') {
-                const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-                if (!view) return;
-                const editor = view.editor;
-                const cursor = editor.getCursor();
-                const line = editor.getLine(cursor.line);
-                if (cursor.ch >= 2 && line.substring(cursor.ch - 2, cursor.ch) === '=>') {
-                    await this.evaluateActiveFile();
-                }
-            }
-        });
+        this.registerEvent(this.app.workspace.on('editor-change', () => this.scheduleEvaluate()));
     }
 
     private async loadVariablesFile() {
@@ -137,15 +128,28 @@ export default class ObCalcaPlugin extends Plugin {
         return { lines: result, vars };
     }
 
-    private async evaluateActiveFile() {
+    private async evaluateActiveFile(showNotice: boolean = false) {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view || !(view.file instanceof TFile)) return;
         const file = view.file;
         const text = await this.app.vault.read(file);
         const { lines, vars } = this.parseDocument(text);
         this.lastVariables = vars;
-        await this.app.vault.modify(file, lines.join('\n'));
-        new Notice('Document evaluated');
+        const newText = lines.join('\n');
+        if (newText === text) return;
+        this.isEvaluating = true;
+        await this.app.vault.modify(file, newText);
+        this.isEvaluating = false;
+        if (showNotice) new Notice('Document evaluated');
+    }
+
+    private scheduleEvaluate() {
+        if (this.isEvaluating) return;
+        if (this.evaluateTimer) window.clearTimeout(this.evaluateTimer);
+        this.evaluateTimer = window.setTimeout(() => {
+            this.evaluateTimer = null;
+            this.evaluateActiveFile(false);
+        }, 300);
     }
 
     private showVariables() {
