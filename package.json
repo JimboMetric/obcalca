@@ -1,0 +1,17 @@
+{
+  "name": "obcalca",
+  "version": "0.0.1",
+  "description": "Obsidian inline calculator plugin",
+  "main": "main.js",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "mathjs": "^11.11.1",
+    "obsidian": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  },
+  "type": "commonjs"
+}
