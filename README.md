@@ -1,7 +1,8 @@
 ObCalca is an Obsidian plugin that performs inline calculations anywhere in a
 markdown file using `math.js`. Define variables or functions in the current
 note or in the global `variables.md` file. Each line ending with `=>`
-automatically displays its value as you edit.
+automatically displays its value as you edit. Results appear in green after the
+arrow and are not saved to the document, so they remain read-only.
 
 x = 10 => 10
 y = x + 5 => 15
