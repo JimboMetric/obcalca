@@ -20,7 +20,7 @@ export default class ObCalcaPlugin extends Plugin {
         this.addCommand({
             id: 'evaluate-document',
             name: 'Evaluate Document',
-            callback: () => this.evaluateActiveFile(true)
+            callback: () => this.evaluateActiveFile()
         });
 
         this.registerDomEvent(document, 'keyup', (evt: KeyboardEvent) => {
@@ -128,19 +128,20 @@ export default class ObCalcaPlugin extends Plugin {
         return { lines: result, vars };
     }
 
-    private async evaluateActiveFile(showNotice: boolean = false) {
+    private async evaluateActiveFile() {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!view || !(view.file instanceof TFile)) return;
-        const file = view.file;
-        const text = await this.app.vault.read(file);
+        if (!view) return;
+        const editor = view.editor;
+        const cursor = editor.getCursor();
+        const text = editor.getValue();
         const { lines, vars } = this.parseDocument(text);
         this.lastVariables = vars;
         const newText = lines.join('\n');
         if (newText === text) return;
         this.isEvaluating = true;
-        await this.app.vault.modify(file, newText);
+        editor.setValue(newText);
+        editor.setCursor(cursor);
         this.isEvaluating = false;
-        if (showNotice) new Notice('Document evaluated');
     }
 
     private scheduleEvaluate() {
@@ -148,7 +149,7 @@ export default class ObCalcaPlugin extends Plugin {
         if (this.evaluateTimer) window.clearTimeout(this.evaluateTimer);
         this.evaluateTimer = window.setTimeout(() => {
             this.evaluateTimer = null;
-            this.evaluateActiveFile(false);
+            this.evaluateActiveFile();
         }, 300);
     }
 
