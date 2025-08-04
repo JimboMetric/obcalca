@@ -1,4 +1,4 @@
-import { Plugin, Notice, MarkdownView, TFile } from 'obsidian';
+import { Plugin, Notice, MarkdownView, TFile, Editor } from 'obsidian';
 import { create, all } from 'mathjs';
 
 const math = create(all, {});
@@ -13,6 +13,7 @@ export default class ObCalcaPlugin extends Plugin {
     private lastVariables: VariableMap = {};
     private isEvaluating = false;
     private evaluateTimer: number | null = null;
+    private resultMarks: any[] = [];
 
     async onload() {
         await this.loadVariablesFile();
@@ -79,18 +80,23 @@ export default class ObCalcaPlugin extends Plugin {
         }
     }
 
-    private parseDocument(text: string): { lines: string[]; vars: VariableMap } {
+    private parseDocument(text: string): { lines: string[]; vars: VariableMap; evals: Map<number, string> } {
         const vars: VariableMap = { ...this.globalVariables };
         const funcs: VariableMap = { ...this.globalFunctions };
         const result: string[] = [];
+        const evals: Map<number, string> = new Map();
         const lines = text.split(/\r?\n/);
 
-        for (let line of lines) {
+        lines.forEach((line, index) => {
             const evalIndex = line.indexOf('=>');
+            let exprPart = line;
             let base = line;
-            if (evalIndex !== -1) base = line.slice(0, evalIndex).trimEnd();
+            if (evalIndex !== -1) {
+                exprPart = line.slice(0, evalIndex).trimEnd();
+                base = line.slice(0, evalIndex + 2).trimEnd();
+            }
 
-            const funcMatch = base.match(/^(\w+)\(([^)]*)\)\s*=\s*(.+)$/);
+            const funcMatch = exprPart.match(/^(\w+)\(([^)]*)\)\s*=\s*(.+)$/);
             if (funcMatch) {
                 const [, name, paramsStr, expr] = funcMatch;
                 const params = paramsStr.split(',').map(p => p.trim()).filter(p => p.length);
@@ -100,32 +106,49 @@ export default class ObCalcaPlugin extends Plugin {
                     return this.evaluateExpression(expr, scope, funcs);
                 };
                 result.push(base);
-                continue;
+                return;
             }
 
-            const assignMatch = base.match(/^(\w+)\s*=\s*(.+)$/);
+            const assignMatch = exprPart.match(/^(\w+)\s*=\s*(.+)$/);
             if (assignMatch) {
                 const [, name, expr] = assignMatch;
                 const value = this.evaluateExpression(expr, vars, funcs);
                 vars[name] = value;
                 if (evalIndex !== -1) {
-                    result.push(`${base} => ${value}`);
-                } else {
-                    result.push(base);
+                    evals.set(index, String(value));
                 }
-                continue;
+                result.push(base);
+                return;
             }
 
             if (evalIndex !== -1) {
-                const expr = base.trim();
+                const expr = exprPart.trim();
                 const value = this.evaluateExpression(expr, vars, funcs);
-                result.push(`${expr} => ${value}`);
+                evals.set(index, String(value));
+                result.push(base);
             } else {
                 result.push(base);
             }
-        }
+        });
 
-        return { lines: result, vars };
+        return { lines: result, vars, evals };
+    }
+
+    private clearResultMarks(editor: Editor) {
+        this.resultMarks.forEach(m => m.clear());
+        this.resultMarks = [];
+    }
+
+    private showResults(editor: Editor, evals: Map<number, string>) {
+        const cm: any = (editor as any).cm;
+        if (!cm) return;
+        evals.forEach((value, line) => {
+            const span = document.createElement('span');
+            span.textContent = ` ${value}`;
+            span.className = 'obcalca-eval';
+            const mark = cm.setBookmark({ line, ch: cm.getLine(line).length }, { widget: span });
+            this.resultMarks.push(mark);
+        });
     }
 
     private async evaluateActiveFile() {
@@ -134,14 +157,31 @@ export default class ObCalcaPlugin extends Plugin {
         const editor = view.editor;
         const cursor = editor.getCursor();
         const text = editor.getValue();
-        const { lines, vars } = this.parseDocument(text);
+        const { lines, vars, evals } = this.parseDocument(text);
         this.lastVariables = vars;
-        const newText = lines.join('\n');
-        if (newText === text) return;
+        const currentLines = text.split(/\r?\n/);
+        let changed = false;
         this.isEvaluating = true;
-        editor.setValue(newText);
+        const max = Math.max(currentLines.length, lines.length);
+        for (let i = 0; i < max; i++) {
+            const curr = currentLines[i] ?? '';
+            const next = lines[i] ?? '';
+            if (curr !== next) {
+                changed = true;
+                editor.replaceRange(next, { line: i, ch: 0 }, { line: i, ch: curr.length });
+            }
+        }
+        if (currentLines.length > lines.length) {
+            editor.replaceRange('', { line: lines.length, ch: 0 }, { line: currentLines.length, ch: 0 });
+            changed = true;
+        }
         editor.setCursor(cursor);
+        this.clearResultMarks(editor);
+        this.showResults(editor, evals);
         this.isEvaluating = false;
+        if (changed) {
+            // trigger a refresh without showing external edit notice
+        }
     }
 
     private scheduleEvaluate() {
