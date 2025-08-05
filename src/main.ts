@@ -145,7 +145,6 @@ export default class ObCalcaPlugin extends Plugin {
         evals.forEach((value, line) => {
             const span = document.createElement('span');
             span.textContent = ` ${value}`;
-            span.className = 'obcalca-eval';
             const mark = cm.setBookmark({ line, ch: cm.getLine(line).length }, { widget: span });
             this.resultMarks.push(mark);
         });
