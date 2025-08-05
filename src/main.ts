@@ -11,12 +11,22 @@ export default class ObCalcaPlugin extends Plugin {
     private globalVariables: VariableMap = {};
     private globalFunctions: VariableMap = {};
     private lastVariables: VariableMap = {};
+    private lastFunctions: VariableMap = {};
     private isEvaluating = false;
     private evaluateTimer: number | null = null;
     private resultMarks: any[] = [];
+    private variableMarks: any[] = [];
 
     async onload() {
         await this.loadVariablesFile();
+
+        const style = document.createElement('style');
+        style.textContent = `
+            .obcalca-variable { color: red; font-weight: bold; }
+            .obcalca-result { color: green; font-weight: bold; }
+        `;
+        document.head.appendChild(style);
+        this.register(() => style.remove());
 
         this.addCommand({
             id: 'evaluate-document',
@@ -80,7 +90,7 @@ export default class ObCalcaPlugin extends Plugin {
         }
     }
 
-    private parseDocument(text: string): { lines: string[]; vars: VariableMap; evals: Map<number, string> } {
+    private parseDocument(text: string): { lines: string[]; vars: VariableMap; funcs: VariableMap; evals: Map<number, string> } {
         const vars: VariableMap = { ...this.globalVariables };
         const funcs: VariableMap = { ...this.globalFunctions };
         const result: string[] = [];
@@ -131,12 +141,17 @@ export default class ObCalcaPlugin extends Plugin {
             }
         });
 
-        return { lines: result, vars, evals };
+        return { lines: result, vars, funcs, evals };
     }
 
     private clearResultMarks(editor: Editor) {
         this.resultMarks.forEach(m => m.clear());
         this.resultMarks = [];
+    }
+
+    private clearVariableMarks(editor: Editor) {
+        this.variableMarks.forEach(m => m.clear());
+        this.variableMarks = [];
     }
 
     private showResults(editor: Editor, evals: Map<number, string>) {
@@ -145,9 +160,32 @@ export default class ObCalcaPlugin extends Plugin {
         evals.forEach((value, line) => {
             const span = document.createElement('span');
             span.textContent = ` ${value}`;
+            span.className = 'obcalca-result';
             const mark = cm.setBookmark({ line, ch: cm.getLine(line).length }, { widget: span });
             this.resultMarks.push(mark);
         });
+    }
+
+    private highlightVariables(editor: Editor) {
+        const cm: any = (editor as any).cm;
+        if (!cm) return;
+        const names = [
+            ...Object.keys(this.lastVariables),
+            ...Object.keys(this.lastFunctions)
+        ];
+        for (let i = 0; i < editor.lineCount(); i++) {
+            const lineText = editor.getLine(i);
+            names.forEach(name => {
+                const regex = new RegExp(`\\b${name}\\b`, 'g');
+                let match: RegExpExecArray | null;
+                while ((match = regex.exec(lineText)) !== null) {
+                    const mark = cm.markText({ line: i, ch: match.index }, { line: i, ch: match.index + name.length }, {
+                        className: 'obcalca-variable'
+                    });
+                    this.variableMarks.push(mark);
+                }
+            });
+        }
     }
 
     private async evaluateActiveFile() {
@@ -156,8 +194,9 @@ export default class ObCalcaPlugin extends Plugin {
         const editor = view.editor;
         const cursor = editor.getCursor();
         const text = editor.getValue();
-        const { lines, vars, evals } = this.parseDocument(text);
+        const { lines, vars, funcs, evals } = this.parseDocument(text);
         this.lastVariables = vars;
+        this.lastFunctions = funcs;
         const currentLines = text.split(/\r?\n/);
         let changed = false;
         this.isEvaluating = true;
@@ -176,7 +215,9 @@ export default class ObCalcaPlugin extends Plugin {
         }
         editor.setCursor(cursor);
         this.clearResultMarks(editor);
+        this.clearVariableMarks(editor);
         this.showResults(editor, evals);
+        this.highlightVariables(editor);
         this.isEvaluating = false;
         if (changed) {
             // trigger a refresh without showing external edit notice
@@ -185,11 +226,17 @@ export default class ObCalcaPlugin extends Plugin {
 
     private scheduleEvaluate() {
         if (this.isEvaluating) return;
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return;
+        const editor = view.editor;
+        const cursor = editor.getCursor();
+        const line = editor.getLine(cursor.line);
+        const immediate = line.trimEnd().endsWith('=>');
         if (this.evaluateTimer) window.clearTimeout(this.evaluateTimer);
         this.evaluateTimer = window.setTimeout(() => {
             this.evaluateTimer = null;
             this.evaluateActiveFile();
-        }, 300);
+        }, immediate ? 0 : 300);
     }
 
     private showVariables() {
