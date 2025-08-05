@@ -150,7 +150,16 @@ export default class ObCalcaPlugin extends Plugin {
     }
 
     private clearVariableMarks(editor: Editor) {
-        this.variableMarks.forEach(m => m.clear());
+        // Support both legacy CodeMirror marks and the newer decoration API
+        // introduced with CodeMirror 6.  Old marks expose a `clear` method,
+        // while new decorations must be removed via `removeDecoration`.
+        this.variableMarks.forEach(m => {
+            if (m && typeof m.clear === 'function') {
+                m.clear();
+            } else if (editor && typeof (editor as any).removeDecoration === 'function') {
+                (editor as any).removeDecoration(m);
+            }
+        });
         this.variableMarks = [];
     }
 
@@ -168,7 +177,9 @@ export default class ObCalcaPlugin extends Plugin {
 
     private highlightVariables(editor: Editor) {
         const cm: any = (editor as any).cm;
-        if (!cm) return;
+        const canMark = cm && typeof cm.markText === 'function';
+        const canDecorate = typeof (editor as any).addDecoration === 'function';
+        if (!canMark && !canDecorate) return;
         const names = [
             ...Object.keys(this.lastVariables),
             ...Object.keys(this.lastFunctions)
@@ -179,10 +190,18 @@ export default class ObCalcaPlugin extends Plugin {
                 const regex = new RegExp(`\\b${name}\\b`, 'g');
                 let match: RegExpExecArray | null;
                 while ((match = regex.exec(lineText)) !== null) {
-                    const mark = cm.markText({ line: i, ch: match.index }, { line: i, ch: match.index + name.length }, {
-                        className: 'obcalca-variable'
-                    });
-                    this.variableMarks.push(mark);
+                    if (canMark) {
+                        const mark = cm.markText({ line: i, ch: match.index }, { line: i, ch: match.index + name.length }, {
+                            className: 'obcalca-variable'
+                        });
+                        this.variableMarks.push(mark);
+                    } else if (canDecorate) {
+                        const deco = (editor as any).addDecoration(
+                            { from: { line: i, ch: match.index }, to: { line: i, ch: match.index + name.length } },
+                            { type: 'text', class: 'obcalca-variable' }
+                        );
+                        this.variableMarks.push(deco);
+                    }
                 }
             });
         }
