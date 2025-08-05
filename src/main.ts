@@ -145,7 +145,16 @@ export default class ObCalcaPlugin extends Plugin {
     }
 
     private clearResultMarks(editor: Editor) {
-        this.resultMarks.forEach(m => m.clear());
+        // Support both legacy CodeMirror marks and the newer decoration API
+        // introduced with CodeMirror 6.  Old marks expose a `clear` method,
+        // while new decorations must be removed via `removeDecoration`.
+        this.resultMarks.forEach(m => {
+            if (m && typeof m.clear === 'function') {
+                m.clear();
+            } else if (editor && typeof (editor as any).removeDecoration === 'function') {
+                (editor as any).removeDecoration(m);
+            }
+        });
         this.resultMarks = [];
     }
 
@@ -165,13 +174,23 @@ export default class ObCalcaPlugin extends Plugin {
 
     private showResults(editor: Editor, evals: Map<number, string>) {
         const cm: any = (editor as any).cm;
-        if (!cm) return;
+        const canBookmark = cm && typeof cm.setBookmark === 'function' && typeof cm.getLine === 'function';
+        const canDecorate = typeof (editor as any).addDecoration === 'function';
         evals.forEach((value, line) => {
             const span = document.createElement('span');
             span.textContent = ` ${value}`;
             span.className = 'obcalca-result';
-            const mark = cm.setBookmark({ line, ch: cm.getLine(line).length }, { widget: span });
-            this.resultMarks.push(mark);
+            const lineLength = editor.getLine(line).length;
+            if (canBookmark) {
+                const mark = cm.setBookmark({ line, ch: lineLength }, { widget: span });
+                this.resultMarks.push(mark);
+            } else if (canDecorate) {
+                const deco = (editor as any).addDecoration(
+                    { from: { line, ch: lineLength }, to: { line, ch: lineLength } },
+                    { type: 'widget', inline: true, widget: span }
+                );
+                this.resultMarks.push(deco);
+            }
         });
     }
 
