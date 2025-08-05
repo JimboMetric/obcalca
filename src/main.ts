@@ -145,30 +145,60 @@ export default class ObCalcaPlugin extends Plugin {
     }
 
     private clearResultMarks(editor: Editor) {
-        this.resultMarks.forEach(m => m.clear());
+        // Support both legacy CodeMirror marks and the newer decoration API
+        // introduced with CodeMirror 6.  Old marks expose a `clear` method,
+        // while new decorations must be removed via `removeDecoration`.
+        this.resultMarks.forEach(m => {
+            if (m && typeof m.clear === 'function') {
+                m.clear();
+            } else if (editor && typeof (editor as any).removeDecoration === 'function') {
+                (editor as any).removeDecoration(m);
+            }
+        });
         this.resultMarks = [];
     }
 
     private clearVariableMarks(editor: Editor) {
-        this.variableMarks.forEach(m => m.clear());
+        // Support both legacy CodeMirror marks and the newer decoration API
+        // introduced with CodeMirror 6.  Old marks expose a `clear` method,
+        // while new decorations must be removed via `removeDecoration`.
+        this.variableMarks.forEach(m => {
+            if (m && typeof m.clear === 'function') {
+                m.clear();
+            } else if (editor && typeof (editor as any).removeDecoration === 'function') {
+                (editor as any).removeDecoration(m);
+            }
+        });
         this.variableMarks = [];
     }
 
     private showResults(editor: Editor, evals: Map<number, string>) {
         const cm: any = (editor as any).cm;
-        if (!cm) return;
+        const canBookmark = cm && typeof cm.setBookmark === 'function' && typeof cm.getLine === 'function';
+        const canDecorate = typeof (editor as any).addDecoration === 'function';
         evals.forEach((value, line) => {
             const span = document.createElement('span');
             span.textContent = ` ${value}`;
             span.className = 'obcalca-result';
-            const mark = cm.setBookmark({ line, ch: cm.getLine(line).length }, { widget: span });
-            this.resultMarks.push(mark);
+            const lineLength = editor.getLine(line).length;
+            if (canBookmark) {
+                const mark = cm.setBookmark({ line, ch: lineLength }, { widget: span });
+                this.resultMarks.push(mark);
+            } else if (canDecorate) {
+                const deco = (editor as any).addDecoration(
+                    { from: { line, ch: lineLength }, to: { line, ch: lineLength } },
+                    { type: 'widget', inline: true, widget: span }
+                );
+                this.resultMarks.push(deco);
+            }
         });
     }
 
     private highlightVariables(editor: Editor) {
         const cm: any = (editor as any).cm;
-        if (!cm) return;
+        const canMark = cm && typeof cm.markText === 'function';
+        const canDecorate = typeof (editor as any).addDecoration === 'function';
+        if (!canMark && !canDecorate) return;
         const names = [
             ...Object.keys(this.lastVariables),
             ...Object.keys(this.lastFunctions)
@@ -179,10 +209,18 @@ export default class ObCalcaPlugin extends Plugin {
                 const regex = new RegExp(`\\b${name}\\b`, 'g');
                 let match: RegExpExecArray | null;
                 while ((match = regex.exec(lineText)) !== null) {
-                    const mark = cm.markText({ line: i, ch: match.index }, { line: i, ch: match.index + name.length }, {
-                        className: 'obcalca-variable'
-                    });
-                    this.variableMarks.push(mark);
+                    if (canMark) {
+                        const mark = cm.markText({ line: i, ch: match.index }, { line: i, ch: match.index + name.length }, {
+                            className: 'obcalca-variable'
+                        });
+                        this.variableMarks.push(mark);
+                    } else if (canDecorate) {
+                        const deco = (editor as any).addDecoration(
+                            { from: { line: i, ch: match.index }, to: { line: i, ch: match.index + name.length } },
+                            { type: 'text', class: 'obcalca-variable' }
+                        );
+                        this.variableMarks.push(deco);
+                    }
                 }
             });
         }
