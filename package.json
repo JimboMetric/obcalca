@@ -5,7 +5,7 @@
   "main": "dist/main.js",
   "type": "commonjs",
   "scripts": {
-    "copy": "copy /Y dist\\main.js \"C:\\Obsidian\\2025\\.obsidian\\plugins\\obcalca\\\" && copy /Y manifest.json \"C:\\Obsidian\\2025\\.obsidian\\plugins\\obcalca\\\" && if exist styles.css copy /Y styles.css \"C:\\Obsidian\\2025\\.obsidian\\plugins\\obcalca\\\"",
+    "copy": "copy /Y dist\\main.js \"C:\\Obsidian\\2025\\.obsidian\\plugins\\obcalca\\\" && copy /Y manifest.json \"C:\\Obsidian\\2025\\.obsidian\\plugins\\obcalca\\\" && if exist src\\styles.css copy /Y src\\styles.css \"C:\\Obsidian\\2025\\.obsidian\\plugins\\obcalca\\\"",
     "build": "esbuild src/main.ts --bundle --outfile=dist/main.js --format=cjs --platform=node --external:obsidian --external:@codemirror/state --external:@codemirror/view && npm run copy",
     "watch": "esbuild src/main.ts --bundle --outfile=dist/main.js --format=cjs --platform=node --external:obsidian --external:@codemirror/state --external:@codemirror/view --watch",
     "deploy": "npm run clean && npm run build",
