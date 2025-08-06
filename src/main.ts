@@ -96,8 +96,18 @@ export default class ObCalcaPlugin extends Plugin {
         const result: string[] = [];
         const evals: Map<number, string> = new Map();
         const lines = text.split(/\r?\n/);
+        let runningSum = 0;
 
         lines.forEach((line, index) => {
+            const sumIndex = line.indexOf('=+>');
+            if (sumIndex !== -1) {
+                const base = line.slice(0, sumIndex + 3).trimEnd();
+                evals.set(index, String(runningSum));
+                runningSum = 0;
+                result.push(base);
+                return;
+            }
+
             const evalIndex = line.indexOf('=>');
             let exprPart = line;
             let base = line;
@@ -124,6 +134,7 @@ export default class ObCalcaPlugin extends Plugin {
                 const [, name, expr] = assignMatch;
                 const value = this.evaluateExpression(expr, vars, funcs);
                 vars[name] = value;
+                if (typeof value === 'number') runningSum += value;
                 if (evalIndex !== -1) {
                     evals.set(index, String(value));
                 }
@@ -134,6 +145,7 @@ export default class ObCalcaPlugin extends Plugin {
             if (evalIndex !== -1) {
                 const expr = exprPart.trim();
                 const value = this.evaluateExpression(expr, vars, funcs);
+                if (typeof value === 'number') runningSum += value;
                 evals.set(index, String(value));
                 result.push(base);
             } else {
@@ -269,7 +281,8 @@ export default class ObCalcaPlugin extends Plugin {
         const editor = view.editor;
         const cursor = editor.getCursor();
         const line = editor.getLine(cursor.line);
-        const immediate = line.trimEnd().endsWith('=>');
+        const trimmed = line.trimEnd();
+        const immediate = trimmed.endsWith('=>') || trimmed.endsWith('=+>');
         if (this.evaluateTimer) window.clearTimeout(this.evaluateTimer);
         this.evaluateTimer = window.setTimeout(() => {
             this.evaluateTimer = null;
